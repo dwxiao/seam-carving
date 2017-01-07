@@ -13,8 +13,6 @@ using namespace std;
 
 enum SeamDirection { VERTICAL, HORIZONTAL };
 
-void testOpenCV();
-
 void printMatrix(const Mat &M) {
     cout << "M =" << endl << M << endl << endl;
 }
@@ -60,7 +58,7 @@ Mat createEnergyImage(string filename) {
     grad.convertTo(energy_image, CV_64F, 1.0/255.0);
     
     // create and show the newly created energy image
-    namedWindow("Energy Image", CV_WINDOW_AUTOSIZE); imshow("Energy Image", energy_image); waitKey(0);
+    //namedWindow("Energy Image", CV_WINDOW_AUTOSIZE); imshow("Energy Image", energy_image); waitKey(0);
     
     return energy_image;
 }
@@ -114,7 +112,7 @@ Mat createCumulativeEnergyMap(Mat energy_image, int seam_direction) {
     applyColorMap(test, result_test, cv::COLORMAP_JET);
     
     // create an show the newly created cumulative energy map
-    namedWindow("Cumulative Energy Map", CV_WINDOW_AUTOSIZE); imshow("Cumulative Energy Map", result_test); waitKey(0);
+    //namedWindow("Cumulative Energy Map", CV_WINDOW_AUTOSIZE); imshow("Cumulative Energy Map", result_test); waitKey(0);
     
     return cumulative_energy_map;
 }
@@ -134,7 +132,6 @@ vector<int> findOptimalSeam(Mat cumulative_energy_map, int seam_direction) {
     if (seam_direction == VERTICAL) {
         // copy the data from the last row of the cumulative energy map
         Mat row = cumulative_energy_map.row(rowsize - 1);
-        printMatrix(row);
     
         // get min and max values and locations
         minMaxLoc(row, &min_val, &max_val, &min_pt, &max_pt);
@@ -219,19 +216,63 @@ void showPath(string filename, vector<int> path, int seam_direction) {
         }
     }
     // display the seam on top of the energy image
-    namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE);
-    imshow("Seam on Energy Image", image);
-    waitKey(0);
+    namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE); imshow("Seam on Energy Image", image); waitKey(0);
+}
+
+void reduce(string filename, vector<int> path, int seam_direction) {
+    // read in a file and check to see if it is valid or not
+    Mat image = imread(filename);
+    if (image.empty()) {
+        cout << "Unable to load image" << endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    int rowsize = image.rows;
+    int colsize = image.cols;
+    
+    Mat dummy(1, 1, CV_8UC3, Vec3b(0, 0, 0));
+    
+    if (seam_direction == VERTICAL) { // reduce the width
+        for (int i = 0; i < rowsize; i++) {
+            Mat new_row;
+            Mat lower = image.rowRange(i, i + 1).colRange(0, path[i]);
+            Mat upper = image.rowRange(i, i + 1).colRange(path[i] + 1, colsize);
+            
+            if (!lower.empty() && !upper.empty()) {
+                hconcat(lower, upper, new_row);
+                hconcat(new_row, dummy, new_row);
+            }
+            else {
+                if (lower.empty()) {
+                    hconcat(upper, dummy, new_row);
+                }
+                else if (upper.empty()) {
+                    hconcat(lower, dummy, new_row);
+                }
+            }
+            
+            new_row.copyTo(image.row(i));
+        }
+        image = image.colRange(0, colsize - 1);
+    }
+    else if (seam_direction == HORIZONTAL) { // reduce the height
+        
+    }
+    
+    cout << image.rows << "x" << image.cols << endl;
+    
+    namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
 }
 
 int main() {
     string filename = "prague.jpg";
-    int seam_direction = HORIZONTAL;
+    int seam_direction = VERTICAL;
     
     Mat energy_image = createEnergyImage(filename);
     Mat cumulative_energy_map = createCumulativeEnergyMap(energy_image, seam_direction);
     vector<int> path = findOptimalSeam(cumulative_energy_map, seam_direction);
-    showPath(filename, path, seam_direction);
+    //showPath(filename, path, seam_direction);
+    reduce(filename, path, seam_direction);
     
     return 0;
 }
