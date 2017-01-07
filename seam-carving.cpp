@@ -17,8 +17,10 @@ void printMatrix(const Mat &M) {
     cout << "M =" << endl << M << endl << endl;
 }
 
-Mat createEnergyImage(string filename) {
-    Mat image, image_gray;
+Mat createEnergyImage(Mat &image) {
+    //Mat image;
+    Mat image_blur;
+    Mat image_gray;
     Mat grad_x, grad_y;
     Mat abs_grad_x, abs_grad_y;
     Mat grad, energy_image;
@@ -27,17 +29,18 @@ Mat createEnergyImage(string filename) {
     int ddepth = CV_16S;
     
     // read in a file and check to see if it is valid or not
+    /*
     image = imread(filename);
     if (image.empty()) {
         cout << "Unable to load image" << endl;
         exit(EXIT_FAILURE);
     }
-    
+    */
     // apply a gaussian blur to reduce noise
-    GaussianBlur(image, image, Size(3,3), 0, 0, BORDER_DEFAULT);
+    GaussianBlur(image, image_blur, Size(3,3), 0, 0, BORDER_DEFAULT);
     
     // convert to grayscale
-    cvtColor(image, image_gray, CV_BGR2GRAY);
+    cvtColor(image_blur, image_gray, CV_BGR2GRAY);
     
     // use Sobel to calculate the gradient of the image in the x and y direction
     Sobel(image_gray, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
@@ -63,7 +66,7 @@ Mat createEnergyImage(string filename) {
     return energy_image;
 }
 
-Mat createCumulativeEnergyMap(Mat energy_image, int seam_direction) {
+Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
     // get the numbers of rows and columns in the image
     int rowsize = energy_image.rows;
     int colsize = energy_image.cols;
@@ -117,7 +120,7 @@ Mat createCumulativeEnergyMap(Mat energy_image, int seam_direction) {
     return cumulative_energy_map;
 }
 
-vector<int> findOptimalSeam(Mat cumulative_energy_map, int seam_direction) {
+vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
     // get the number of rows in the cumulative energy map
     int rowsize = cumulative_energy_map.rows;
     int colsize = cumulative_energy_map.cols;
@@ -200,9 +203,9 @@ vector<int> findOptimalSeam(Mat cumulative_energy_map, int seam_direction) {
     return path;
 }
 
-void showPath(string filename, vector<int> path, int seam_direction) {
+void showPath(Mat &image, vector<int> path, int seam_direction) {
     // read in a file and check to see if it is valid or not
-    Mat image = createEnergyImage(filename);
+    //Mat image = createEnergyImage(filename);
     
     // loop through the image and change all pixels in the path to white
     if (seam_direction == VERTICAL) {
@@ -219,14 +222,15 @@ void showPath(string filename, vector<int> path, int seam_direction) {
     namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE); imshow("Seam on Energy Image", image); waitKey(0);
 }
 
-void reduce(string filename, vector<int> path, int seam_direction) {
+void reduce(Mat &image, vector<int> path, int seam_direction) {
     // read in a file and check to see if it is valid or not
+    /*
     Mat image = imread(filename);
     if (image.empty()) {
         cout << "Unable to load image" << endl;
         exit(EXIT_FAILURE);
     }
-    
+    */
     int rowsize = image.rows;
     int colsize = image.cols;
     
@@ -250,29 +254,58 @@ void reduce(string filename, vector<int> path, int seam_direction) {
                     hconcat(lower, dummy, new_row);
                 }
             }
-            
             new_row.copyTo(image.row(i));
         }
         image = image.colRange(0, colsize - 1);
     }
     else if (seam_direction == HORIZONTAL) { // reduce the height
-        
+        for (int i = 0; i < colsize; i++) {
+            Mat new_col;
+            Mat lower = image.colRange(i, i + 1).rowRange(0, path[i]);
+            Mat upper = image.colRange(i, i + 1).rowRange(path[i] + 1, rowsize);
+            
+            if (!lower.empty() && !upper.empty()) {
+                vconcat(lower, upper, new_col);
+                vconcat(new_col, dummy, new_col);
+            }
+            else {
+                if (lower.empty()) {
+                    vconcat(upper, dummy, new_col);
+                }
+                else if (upper.empty()) {
+                    vconcat(lower, dummy, new_col);
+                }
+            }
+            new_col.copyTo(image.col(i));
+        }
+        image = image.rowRange(0, rowsize - 1);
+    }
+    
+    //namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
+}
+
+int main() {
+    string filename = "prague.jpg";
+    int seam_direction = HORIZONTAL;
+    
+    Mat image = imread(filename);
+    if (image.empty()) {
+        cout << "Unable to load image" << endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    namedWindow("Original Image", CV_WINDOW_AUTOSIZE); imshow("Original Image", image); waitKey(0);
+    
+    for (int i = 0; i < 101; i++) {
+        Mat energy_image = createEnergyImage(image);
+        Mat cumulative_energy_map = createCumulativeEnergyMap(energy_image, seam_direction);
+        vector<int> path = findOptimalSeam(cumulative_energy_map, seam_direction);
+        reduce(image, path, seam_direction);
     }
     
     cout << image.rows << "x" << image.cols << endl;
     
     namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
-}
-
-int main() {
-    string filename = "prague.jpg";
-    int seam_direction = VERTICAL;
-    
-    Mat energy_image = createEnergyImage(filename);
-    Mat cumulative_energy_map = createCumulativeEnergyMap(energy_image, seam_direction);
-    vector<int> path = findOptimalSeam(cumulative_energy_map, seam_direction);
-    //showPath(filename, path, seam_direction);
-    reduce(filename, path, seam_direction);
     
     return 0;
 }
