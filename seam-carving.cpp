@@ -2,11 +2,10 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv/cv.h>
-#include <opencv/highgui.h>
 #include <iostream>
 #include <algorithm>
 #include <vector>
+
 
 using namespace cv;
 using namespace std;
@@ -67,6 +66,8 @@ Mat createEnergyImage(Mat &image) {
 }
 
 Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
+    double a,b,c;
+    
     // get the numbers of rows and columns in the image
     int rowsize = energy_image.rows;
     int colsize = energy_image.cols;
@@ -77,8 +78,6 @@ Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
     // copy the first row
     if (seam_direction == VERTICAL) energy_image.row(0).copyTo(cumulative_energy_map.row(0));
     else if (seam_direction == HORIZONTAL) energy_image.col(0).copyTo(cumulative_energy_map.col(0));
-    
-    double a,b,c;
     
     // dynamic programming ftw
     if (seam_direction == VERTICAL) {
@@ -104,7 +103,7 @@ Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
         }
     }
 
-    // converting using a similar function to imagesc()
+    // convert to color scale (similar to MATLAB's imagesc()) -- only used during dev/demo purposes
     Mat test;
     double Cmin;
     double Cmax;
@@ -121,16 +120,16 @@ Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
 }
 
 vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
-    // get the number of rows in the cumulative energy map
-    int rowsize = cumulative_energy_map.rows;
-    int colsize = cumulative_energy_map.cols;
+    // declare variables
     double a,b,c;
     int offset = 0;
     vector<int> path;
-    
-    // initialize variables
     double min_val, max_val;
     Point min_pt, max_pt;
+    
+    // get the number of rows and columns in the cumulative energy map
+    int rowsize = cumulative_energy_map.rows;
+    int colsize = cumulative_energy_map.cols;
     
     if (seam_direction == VERTICAL) {
         // copy the data from the last row of the cumulative energy map
@@ -144,7 +143,7 @@ vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
         int min_index = min_pt.x;
         path[rowsize - 1] = min_index;
         
-        // starting from the bottom, look at the three adjacent pixels above you, choose the minimum of those and add to the path
+        // starting from the bottom, look at the three adjacent pixels above current pixel, choose the minimum of those and add to the path
         for (int i = rowsize - 2; i >= 0; i--) {
             a = cumulative_energy_map.at<double>(i, max(min_index - 1, 0));
             b = cumulative_energy_map.at<double>(i, min_index);
@@ -167,7 +166,7 @@ vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
     }
     
     else if (seam_direction == HORIZONTAL) {
-        // copy the data from the last col of the cumulative energy map
+        // copy the data from the last column of the cumulative energy map
         Mat col = cumulative_energy_map.col(colsize - 1);
         
         // get min and max values and locations
@@ -178,7 +177,7 @@ vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
         int min_index = min_pt.y;
         path[colsize - 1] = min_index;
         
-        // starting from the right, look at the three adjacent pixels to the left of you, choose the minimum of those and add to the path
+        // starting from the right, look at the three adjacent pixels to the left of current pixel, choose the minimum of those and add to the path
         for (int i = colsize - 2; i >= 0; i--) {
             a = cumulative_energy_map.at<double>(max(min_index - 1, 0), i);
             b = cumulative_energy_map.at<double>(min_index, i);
@@ -231,17 +230,21 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
         exit(EXIT_FAILURE);
     }
     */
+    // get the number of rows and columns in the image
     int rowsize = image.rows;
     int colsize = image.cols;
     
+    // create a 1x1x3 dummy matrix to add onto the tail of a new row to maintain image dimensions and mark for deletion
     Mat dummy(1, 1, CV_8UC3, Vec3b(0, 0, 0));
     
     if (seam_direction == VERTICAL) { // reduce the width
         for (int i = 0; i < rowsize; i++) {
+            // take all pixels to the left and right of marked pixel and store them in appropriate subrow variables
             Mat new_row;
             Mat lower = image.rowRange(i, i + 1).colRange(0, path[i]);
             Mat upper = image.rowRange(i, i + 1).colRange(path[i] + 1, colsize);
             
+            // merge the two subrows and dummy matrix/pixel into a full row
             if (!lower.empty() && !upper.empty()) {
                 hconcat(lower, upper, new_row);
                 hconcat(new_row, dummy, new_row);
@@ -254,16 +257,20 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
                     hconcat(lower, dummy, new_row);
                 }
             }
+            // take the newly formed row and place it into the original image
             new_row.copyTo(image.row(i));
         }
+        // clip the right-most side of the image
         image = image.colRange(0, colsize - 1);
     }
     else if (seam_direction == HORIZONTAL) { // reduce the height
         for (int i = 0; i < colsize; i++) {
+            // take all pixels to the top and bottom of marked pixel and store the in appropriate subcolumn variables
             Mat new_col;
             Mat lower = image.colRange(i, i + 1).rowRange(0, path[i]);
             Mat upper = image.colRange(i, i + 1).rowRange(path[i] + 1, rowsize);
             
+            // merge the two subcolumns and dummy matrix/pixel into a full row
             if (!lower.empty() && !upper.empty()) {
                 vconcat(lower, upper, new_col);
                 vconcat(new_col, dummy, new_col);
@@ -276,8 +283,10 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
                     vconcat(lower, dummy, new_col);
                 }
             }
+            // take the newly formed column and place it into the original image
             new_col.copyTo(image.col(i));
         }
+        // clip the bottom-most side of the image
         image = image.rowRange(0, rowsize - 1);
     }
     
@@ -286,7 +295,7 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
 
 int main() {
     string filename = "prague.jpg";
-    int seam_direction = HORIZONTAL;
+    int seam_direction = VERTICAL;
     
     Mat image = imread(filename);
     if (image.empty()) {
@@ -294,7 +303,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
     
-    namedWindow("Original Image", CV_WINDOW_AUTOSIZE); imshow("Original Image", image); waitKey(0);
+    namedWindow("Original Image", CV_WINDOW_AUTOSIZE); imshow("Original Image", image);
     
     for (int i = 0; i < 101; i++) {
         Mat energy_image = createEnergyImage(image);
