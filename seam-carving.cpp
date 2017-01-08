@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <time.h>
 
 
 using namespace cv;
@@ -293,7 +294,23 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
     //namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
 }
 
+clock_t startClock() {
+    return clock();
+}
+
+void endClock(clock_t start) {
+    clock_t end = clock();
+    float time = ((float)end - (float)start) / CLOCKS_PER_SEC;
+    
+    cout << "time taken: ";
+    cout << fixed;
+    cout << setprecision(7);
+    cout << time << endl;
+}
+
 int main() {
+    clock_t start = startClock();
+    
     string filename = "prague.jpg";
     int seam_direction = VERTICAL;
     
@@ -314,7 +331,7 @@ int main() {
     
     cout << image.rows << "x" << image.cols << endl;
     
-    namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
+    namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); endClock(start); waitKey(0);
     
     return 0;
 }
