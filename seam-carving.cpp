@@ -3,6 +3,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <iostream>
+#include <string>
 #include <algorithm>
 #include <vector>
 #include <time.h>
@@ -13,12 +14,20 @@ using namespace std;
 
 enum SeamDirection { VERTICAL, HORIZONTAL };
 
+float energy_image_time = 0;
+float cumulative_energy_map_time = 0;
+float find_seam_time = 0;
+float reduce_time = 0;
+
+bool demo;
+bool debug;
+
 void printMatrix(const Mat &M) {
     cout << "M =" << endl << M << endl << endl;
 }
 
 Mat createEnergyImage(Mat &image) {
-    //Mat image;
+    clock_t start = clock();
     Mat image_blur;
     Mat image_gray;
     Mat grad_x, grad_y;
@@ -27,15 +36,7 @@ Mat createEnergyImage(Mat &image) {
     int scale = 1;
     int delta = 0;
     int ddepth = CV_16S;
-    
-    // read in a file and check to see if it is valid or not
-    /*
-    image = imread(filename);
-    if (image.empty()) {
-        cout << "Unable to load image" << endl;
-        exit(EXIT_FAILURE);
-    }
-    */
+
     // apply a gaussian blur to reduce noise
     GaussianBlur(image, image_blur, Size(3,3), 0, 0, BORDER_DEFAULT);
     
@@ -54,19 +55,26 @@ Mat createEnergyImage(Mat &image) {
     convertScaleAbs(grad_x, abs_grad_x);
     convertScaleAbs(grad_y, abs_grad_y);
     
-    /// total gradient (approx)
+    // total gradient (approx)
     addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad );
     
     // convert the default values to double precision
     grad.convertTo(energy_image, CV_64F, 1.0/255.0);
     
     // create and show the newly created energy image
-    //namedWindow("Energy Image", CV_WINDOW_AUTOSIZE); imshow("Energy Image", energy_image); waitKey(0);
+    if (demo) {
+        namedWindow("Energy Image", CV_WINDOW_AUTOSIZE); imshow("Energy Image", energy_image);
+    }
+    
+    // calculate time taken
+    clock_t end = clock();
+    energy_image_time += ((float)end - (float)start) / CLOCKS_PER_SEC;
     
     return energy_image;
 }
 
-Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
+Mat createCumulativeEnergyMap(Mat &energy_image, SeamDirection seam_direction) {
+    clock_t start = clock();
     double a,b,c;
     
     // get the numbers of rows and columns in the image
@@ -103,25 +111,29 @@ Mat createCumulativeEnergyMap(Mat &energy_image, int seam_direction) {
             }
         }
     }
-
-    // convert to color scale (similar to MATLAB's imagesc()) -- only used during dev/demo purposes
-    Mat test;
-    double Cmin;
-    double Cmax;
-    cv::minMaxLoc(cumulative_energy_map, &Cmin, &Cmax);
-    float scale = 255.0 / (Cmax - Cmin);
-    cumulative_energy_map.convertTo(test, CV_8UC1, scale);
-    cv::Mat result_test;
-    applyColorMap(test, result_test, cv::COLORMAP_JET);
     
-    // create an show the newly created cumulative energy map
-    //namedWindow("Cumulative Energy Map", CV_WINDOW_AUTOSIZE); imshow("Cumulative Energy Map", result_test); waitKey(0);
+    // create and show the newly created cumulative energy map converting map into color (similar to MATLAB's imagesc())
+    if (demo) {
+        Mat color_cumulative_energy_map;
+        double Cmin;
+        double Cmax;
+        cv::minMaxLoc(cumulative_energy_map, &Cmin, &Cmax);
+        float scale = 255.0 / (Cmax - Cmin);
+        cumulative_energy_map.convertTo(color_cumulative_energy_map, CV_8UC1, scale);
+        applyColorMap(color_cumulative_energy_map, color_cumulative_energy_map, cv::COLORMAP_JET);
+        
+        namedWindow("Cumulative Energy Map", CV_WINDOW_AUTOSIZE); imshow("Cumulative Energy Map", color_cumulative_energy_map);
+    }
+    
+    // calculate time taken
+    clock_t end = clock();
+    cumulative_energy_map_time += ((float)end - (float)start) / CLOCKS_PER_SEC;
     
     return cumulative_energy_map;
 }
 
-vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
-    // declare variables
+vector<int> findOptimalSeam(Mat &cumulative_energy_map, SeamDirection seam_direction) {
+    clock_t start = clock();
     double a,b,c;
     int offset = 0;
     vector<int> path;
@@ -200,37 +212,16 @@ vector<int> findOptimalSeam(Mat &cumulative_energy_map, int seam_direction) {
         }
     }
     
+    // calculate time taken
+    clock_t end = clock();
+    find_seam_time += ((float)end - (float)start) / CLOCKS_PER_SEC;
+    
     return path;
 }
 
-void showPath(Mat &image, vector<int> path, int seam_direction) {
-    // read in a file and check to see if it is valid or not
-    //Mat image = createEnergyImage(filename);
+void reduce(Mat &image, vector<int> path, SeamDirection seam_direction) {
+    clock_t start = clock();
     
-    // loop through the image and change all pixels in the path to white
-    if (seam_direction == VERTICAL) {
-        for (int i = 0; i < image.rows; i++) {
-            image.at<double>(i,path[i]) = 1;
-        }
-    }
-    else if (seam_direction == HORIZONTAL) {
-        for (int i = 0; i < image.cols; i++) {
-            image.at<double>(path[i],i) = 1;
-        }
-    }
-    // display the seam on top of the energy image
-    namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE); imshow("Seam on Energy Image", image); waitKey(0);
-}
-
-void reduce(Mat &image, vector<int> path, int seam_direction) {
-    // read in a file and check to see if it is valid or not
-    /*
-    Mat image = imread(filename);
-    if (image.empty()) {
-        cout << "Unable to load image" << endl;
-        exit(EXIT_FAILURE);
-    }
-    */
     // get the number of rows and columns in the image
     int rowsize = image.rows;
     int colsize = image.cols;
@@ -290,30 +281,37 @@ void reduce(Mat &image, vector<int> path, int seam_direction) {
         // clip the bottom-most side of the image
         image = image.rowRange(0, rowsize - 1);
     }
+   
+    if (demo) {
+        namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image);
+    }
     
-    //namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
-}
-
-clock_t startClock() {
-    return clock();
-}
-
-void endClock(clock_t start) {
+    // calculate time taken
     clock_t end = clock();
-    float time = ((float)end - (float)start) / CLOCKS_PER_SEC;
-    
-    cout << "time taken: ";
-    cout << fixed;
-    cout << setprecision(7);
-    cout << time << endl;
+    reduce_time += ((float)end - (float)start) / CLOCKS_PER_SEC;
 }
 
-int main() {
-    clock_t start = startClock();
+void showPath(Mat &energy_image, vector<int> path, SeamDirection seam_direction) {
+    // loop through the image and change all pixels in the path to white
+    if (seam_direction == VERTICAL) {
+        for (int i = 0; i < energy_image.rows; i++) {
+            energy_image.at<double>(i,path[i]) = 1;
+        }
+    }
+    else if (seam_direction == HORIZONTAL) {
+        for (int i = 0; i < energy_image.cols; i++) {
+            energy_image.at<double>(path[i],i) = 1;
+        }
+    }
     
-    string filename = "prague.jpg";
-    int seam_direction = VERTICAL;
+    // display the seam on top of the energy image
+    namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE); imshow("Seam on Energy Image", energy_image);
+}
+
+void driver(string filename, SeamDirection seam_direction, int iterations) {
+    clock_t start = clock();
     
+    // attempt to read in the file
     Mat image = imread(filename);
     if (image.empty()) {
         cout << "Unable to load image" << endl;
@@ -321,17 +319,93 @@ int main() {
     }
     
     namedWindow("Original Image", CV_WINDOW_AUTOSIZE); imshow("Original Image", image);
-    
-    for (int i = 0; i < 101; i++) {
+    // perform the specified number of reductions
+    for (int i = 0; i < iterations; i++) {
         Mat energy_image = createEnergyImage(image);
         Mat cumulative_energy_map = createCumulativeEnergyMap(energy_image, seam_direction);
         vector<int> path = findOptimalSeam(cumulative_energy_map, seam_direction);
         reduce(image, path, seam_direction);
+        if (demo) {
+            showPath(energy_image, path, seam_direction);
+        }
     }
     
-    cout << image.rows << "x" << image.cols << endl;
+    // calculate and output time taken
+    if (debug) {
+        clock_t end = clock();
+        float total_time = ((float)end - (float)start) / CLOCKS_PER_SEC;
+        cout << "Final image size: " << image.rows << "x" << image.cols << endl;
+        cout << "energy image time taken: "; cout << fixed; cout << setprecision(7); cout << energy_image_time << endl;
+        cout << "cumulative energy map time taken: "; cout << fixed; cout << setprecision(7); cout << cumulative_energy_map_time << endl;
+        cout << "find seam time taken: "; cout << fixed; cout << setprecision(7); cout << find_seam_time << endl;
+        cout << "reduce time taken: "; cout << fixed; cout << setprecision(7); cout << reduce_time << endl;
+        cout << "total time taken: "; cout << fixed; cout << setprecision(7); cout << total_time << endl;
+    }
     
-    namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); endClock(start); waitKey(0);
+    namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
+}
+
+int main() {
+    string filename, reduce_direction, width_height, s_iterations;
+    SeamDirection seam_direction;
+    int iterations;
     
+    cout << "Please enter a filename: ";
+    cin >> filename;
+    
+    Mat image = imread(filename);
+    if (image.empty()) {
+        cout << "Unable to load image, please try again." << endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    cout << "Reduce width or reduce height? (0 to reduce width | 1 to reduce height): ";
+    cin >> reduce_direction;
+    
+    if (reduce_direction == "0" || reduce_direction == "1") {
+        if (reduce_direction == "0") {
+            cout << "0" << endl;
+            width_height = "width";
+            seam_direction = VERTICAL;
+        }
+        else if (reduce_direction == "1") {
+            cout << "1" << endl;
+            width_height = "height";
+            seam_direction = HORIZONTAL;
+        }
+    }
+    else {
+        cout << "Invalid choice, please re-run and try again" << endl;
+        return 0;
+    }
+    
+    cout << "Reduce " << width_height << " how many times? ";
+    cin >> s_iterations;
+    
+    iterations = stoi(s_iterations);
+    int rowsize = image.rows;
+    int colsize = image.cols;
+    
+    // check that inputted number of iterations doesn't exceed the images size
+    if (seam_direction == VERTICAL) {
+        if (iterations > colsize) {
+            cout << "Input is greater than image's width, please try again." << endl;
+            return 0;
+        }
+    }
+    else if (seam_direction == HORIZONTAL) {
+        if (iterations > rowsize) {
+            cout << "Input is greater than image's height, please try again." << endl;
+            return 0;
+        }
+    }
+
+    demo = false;
+    debug = true;
+    
+    if (demo) iterations = 1;
+    
+    driver(filename, seam_direction, iterations);
+
     return 0;
 }
