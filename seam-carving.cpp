@@ -8,7 +8,6 @@
 #include <vector>
 #include <time.h>
 
-
 using namespace cv;
 using namespace std;
 
@@ -22,14 +21,9 @@ float reduce_time = 0;
 bool demo;
 bool debug;
 
-void printMatrix(const Mat &M) {
-    cout << "M =" << endl << M << endl << endl;
-}
-
 Mat createEnergyImage(Mat &image) {
     clock_t start = clock();
-    Mat image_blur;
-    Mat image_gray;
+    Mat image_blur, image_gray;
     Mat grad_x, grad_y;
     Mat abs_grad_x, abs_grad_y;
     Mat grad, energy_image;
@@ -44,12 +38,12 @@ Mat createEnergyImage(Mat &image) {
     cvtColor(image_blur, image_gray, CV_BGR2GRAY);
     
     // use Sobel to calculate the gradient of the image in the x and y direction
-    Sobel(image_gray, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
-    Sobel(image_gray, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
+    //Sobel(image_gray, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
+    //Sobel(image_gray, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
     
     // use Scharr to calculate the gradient of the image in the x and y direction
-    //Scharr(image_gray, grad_x, ddepth, 1, 0, scale, delta, BORDER_DEFAULT);
-    //Scharr(image_gray, grad_y, ddepth, 0, 1, scale, delta, BORDER_DEFAULT);
+    Scharr(image_gray, grad_x, ddepth, 1, 0, scale, delta, BORDER_DEFAULT);
+    Scharr(image_gray, grad_y, ddepth, 0, 1, scale, delta, BORDER_DEFAULT);
 
     // convert gradients to abosulte versions of themselves
     convertScaleAbs(grad_x, abs_grad_x);
@@ -88,7 +82,7 @@ Mat createCumulativeEnergyMap(Mat &energy_image, SeamDirection seam_direction) {
     if (seam_direction == VERTICAL) energy_image.row(0).copyTo(cumulative_energy_map.row(0));
     else if (seam_direction == HORIZONTAL) energy_image.col(0).copyTo(cumulative_energy_map.col(0));
     
-    // dynamic programming ftw
+    // take the minimum of the three neighbors and add to total, this creates a running sum which is used to determine the lowest energy path
     if (seam_direction == VERTICAL) {
         for (int row = 1; row < rowsize; row++) {
             for (int col = 0; col < colsize; col++) {
@@ -308,17 +302,11 @@ void showPath(Mat &energy_image, vector<int> path, SeamDirection seam_direction)
     namedWindow("Seam on Energy Image", CV_WINDOW_AUTOSIZE); imshow("Seam on Energy Image", energy_image);
 }
 
-void driver(string filename, SeamDirection seam_direction, int iterations) {
+void driver(Mat &image, SeamDirection seam_direction, int iterations) {
     clock_t start = clock();
     
-    // attempt to read in the file
-    Mat image = imread(filename);
-    if (image.empty()) {
-        cout << "Unable to load image" << endl;
-        exit(EXIT_FAILURE);
-    }
-    
     namedWindow("Original Image", CV_WINDOW_AUTOSIZE); imshow("Original Image", image);
+    
     // perform the specified number of reductions
     for (int i = 0; i < iterations; i++) {
         Mat energy_image = createEnergyImage(image);
@@ -343,6 +331,7 @@ void driver(string filename, SeamDirection seam_direction, int iterations) {
     }
     
     namedWindow("Reduced Image", CV_WINDOW_AUTOSIZE); imshow("Reduced Image", image); waitKey(0);
+    imwrite("result.jpg", image);
 }
 
 int main() {
@@ -364,12 +353,10 @@ int main() {
     
     if (reduce_direction == "0" || reduce_direction == "1") {
         if (reduce_direction == "0") {
-            cout << "0" << endl;
             width_height = "width";
             seam_direction = VERTICAL;
         }
         else if (reduce_direction == "1") {
-            cout << "1" << endl;
             width_height = "height";
             seam_direction = HORIZONTAL;
         }
@@ -386,7 +373,7 @@ int main() {
     int rowsize = image.rows;
     int colsize = image.cols;
     
-    // check that inputted number of iterations doesn't exceed the images size
+    // check that inputted number of iterations doesn't exceed the image size
     if (seam_direction == VERTICAL) {
         if (iterations > colsize) {
             cout << "Input is greater than image's width, please try again." << endl;
@@ -401,11 +388,11 @@ int main() {
     }
 
     demo = false;
-    debug = true;
+    debug = false;
     
     if (demo) iterations = 1;
     
-    driver(filename, seam_direction, iterations);
+    driver(image, seam_direction, iterations);
 
     return 0;
 }
